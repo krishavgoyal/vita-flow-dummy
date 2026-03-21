@@ -9,8 +9,4 @@ const authMiddleware = require("../middlewares/authMiddleware");
 router.post("/signup", signUp);
 router.post("/login", login);
 
-router.get("/dashboard", authMiddleware, (req, res)=>{
-    res.json({message: "Welcome " + req.user.email});
-});
-
 module.exports = router;

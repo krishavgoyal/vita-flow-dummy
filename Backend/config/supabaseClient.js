@@ -1,3 +1,4 @@
+//Linking our backend to our database.
 const {createClient} = require("@supabase/supabase-js");
 require("dotenv").config();
 

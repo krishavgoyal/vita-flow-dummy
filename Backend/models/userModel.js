@@ -1,4 +1,4 @@
-// This file contains the functions of user, like user creation, fetching user, etc, more to be added.
+//This file contains only the DB queries.
 const supabase = require("../config/supabaseClient");
 
 const createUser = async (email, password_hash) => {
@@ -15,4 +15,19 @@ const findUserByEmail = async(email) => {
     .single();
 };
 
-module.exports = {createUser, findUserByEmail};
+const updateUserProfile = async(email, updates) => {
+    return await supabase
+    .from("USER_PROFILE")
+    .update(updates)
+    .eq("email", email)
+    .select()
+    .single();
+};
+
+const getAllUsers = async() => {
+    return await supabase
+    .from("USER_PROFILE")
+    .select("*");
+};
+
+module.exports = {createUser, findUserByEmail, updateUserProfile, getAllUsers};

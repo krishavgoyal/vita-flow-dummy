@@ -1,15 +1,11 @@
 const express = require("express");
 const router = express.Router();
-const supabase = require("../db/supabaseClient");
+const supabase = require("../config/supabaseClient");
+const {updateProfile, fetchAllUsers} = require("../controllers/userController");
+const authMiddleware = require("../middlewares/authMiddleware");
 
-router.get("/users", async(req, res) => {
-    const {data, error} = await supabase
-    .from("users")
-    .select("*")
+router.put("/profile", authMiddleware, updateProfile); // Middleware creates protection
 
-    if(error) return res.status(500).json(error)
-
-    res.json(data)
-});
+router.get("/users", fetchAllUsers);
 
 module.exports = router;

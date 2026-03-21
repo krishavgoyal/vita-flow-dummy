@@ -3,6 +3,7 @@ const cors = require("cors");
 require("dotenv").config();
 
 const authRoutes = require("./routes/authRoutes");
+const userRoutes = require("./routes/userRoutes");
 
 const app = express();
 
@@ -14,6 +15,11 @@ app.get("/", (req, res) => {
 })
 
 app.use("/api/auth", authRoutes);
+
+app.use("/api/user", userRoutes);
+
+
+
 
 app.listen(5000, () => {
     console.log("Server running on port 5000");
