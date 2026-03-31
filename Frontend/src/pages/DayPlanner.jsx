@@ -26,32 +26,42 @@ function calcNutrition(profile) {
 }
 
 /* ─────────────────────────────────────────────
-   HELPERS — parse DB plan rows into meal/workout shape
+   HELPERS — parse DB plan into meal/workout shape
 ───────────────────────────────────────────── */
 
-// Diet plan rows from DB look like: { meal_type, meal_name, food_items (array), calories }
-function parseDietPlan(planRows, calorieGoal) {
-  if (!planRows || planRows.length === 0) return null;
-  const result = {};
-  planRows.forEach(row => {
-    const type = row.meal_type?.toLowerCase(); // 'breakfast', 'lunch', 'dinner'
-    if (!type) return;
-    result[type] = {
-      name: row.meal_name || type,
-      items: Array.isArray(row.food_items) ? row.food_items : [row.food_items],
-      kcal: row.calories || 0,
-      time: type === 'breakfast' ? '8:00 AM' : type === 'lunch' ? '1:00 PM' : '7:30 PM',
-    };
-  });
-  return result;
+// Backend returns: { message, plan: { diet_plan_breakfast: [[...]], diet_plan_lunch: [[...]], diet_plan_dinner: [[...]] } }
+function parseDietPlan(plan, calorieGoal) {
+  if (!plan) return null;
+  return {
+    breakfast: {
+      name: 'Breakfast',
+      items: plan.diet_plan_breakfast?.[0] || [],
+      kcal: Math.round(calorieGoal * 0.3),
+      time: '8:00 AM',
+    },
+    lunch: {
+      name: 'Lunch',
+      items: plan.diet_plan_lunch?.[0] || [],
+      kcal: Math.round(calorieGoal * 0.4),
+      time: '1:00 PM',
+    },
+    dinner: {
+      name: 'Dinner',
+      items: plan.diet_plan_dinner?.[0] || [],
+      kcal: calorieGoal - Math.round(calorieGoal * 0.3) - Math.round(calorieGoal * 0.4),
+      time: '7:30 PM',
+    },
+  };
 }
 
-// Workout plan rows from DB look like: { exercise_name, sets, reps, duration_minutes }
-function parseWorkoutPlan(planRows) {
-  if (!planRows || planRows.length === 0) return [];
-  return planRows.map(row => ({
-    label: row.exercise_name || row.label || 'Exercise',
-    icon: row.icon || '💪',
+// Backend returns: { message, plan: { workout_plan: {...} } }
+function parseWorkoutPlan(plan) {
+  if (!plan || !plan.workout_plan) return [];
+  const wp = plan.workout_plan;
+  const exercises = Array.isArray(wp) ? wp : Object.values(wp);
+  return exercises.map(ex => ({
+    label: ex.exercise_name || ex.name || ex.label || String(ex),
+    icon: ex.icon || '💪',
   }));
 }
 
@@ -129,7 +139,6 @@ export default function DayPlanner() {
 
   const nutrition = calcNutrition(profile);
 
-  // ── API state ──
   const [meals, setMeals] = useState(null);
   const [workouts, setWorkouts] = useState([]);
   const [dietLoading, setDietLoading] = useState(true);
@@ -146,11 +155,17 @@ export default function DayPlanner() {
           allergies: profile.allergies || '',
           calories: nutrition.calories,
         });
-        // Backend returns { message, plan: [...rows] }
+        console.log('Diet response:', res.data);
         const parsed = parseDietPlan(res.data.plan, nutrition.calories);
+        console.log('Parsed diet:', parsed);
         setMeals(parsed);
       } catch (err) {
-        setDietError(err.response?.data?.error || 'Failed to load diet plan.');
+        console.error('Diet error:', err.response?.data || err.message);
+        setDietError(
+          typeof err.response?.data?.error === 'string'
+            ? err.response.data.error
+            : err.response?.data?.message || err.message || 'Failed to load diet plan.'
+        );
       } finally {
         setDietLoading(false);
       }
@@ -165,11 +180,17 @@ export default function DayPlanner() {
         const res = await generateWorkout({
           activity_level: profile.activity_level || 'Moderate',
         });
-        // Backend returns { message, plan: [...rows] }
+        console.log('Workout response:', res.data);
         const parsed = parseWorkoutPlan(res.data.plan);
+        console.log('Parsed workout:', parsed);
         setWorkouts(parsed);
       } catch (err) {
-        setWorkoutError(err.response?.data?.error || 'Failed to load workout plan.');
+        console.error('Workout error:', err.response?.data || err.message);
+        setWorkoutError(
+          typeof err.response?.data?.error === 'string'
+            ? err.response.data.error
+            : err.response?.data?.message || err.message || 'Failed to load workout plan.'
+        );
       } finally {
         setWorkoutLoading(false);
       }
@@ -177,7 +198,6 @@ export default function DayPlanner() {
     fetchWorkout();
   }, []);
 
-  // ── Daily log state (persisted to localStorage) ──
   const dateStr = new Date().toISOString().split('T')[0];
   const [logged, setLogged] = useState(() => {
     try {
@@ -197,7 +217,6 @@ export default function DayPlanner() {
     localStorage.setItem('vita-daily-log', JSON.stringify({ date: dateStr, logged, water }));
   }, [dateStr, logged, water]);
 
-  // ── Calorie calculations ──
   const caloriesConsumed = meals
     ? (logged.breakfast ? (meals.breakfast?.kcal || 0) : 0) +
       (logged.lunch     ? (meals.lunch?.kcal     || 0) : 0) +
@@ -221,7 +240,6 @@ export default function DayPlanner() {
   const carbsConsumed   = Math.round(nutrition.carbs   * fracLogged);
   const fatConsumed     = Math.round(nutrition.fat     * fracLogged);
 
-  // ── Greeting ──
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const name = profile.name ? `, ${profile.name.split(' ')[0]}` : '';
@@ -235,7 +253,6 @@ export default function DayPlanner() {
 
   return (
     <>
-      {/* ── Page Header ── */}
       <div className="page-header">
         <div>
           <div className="greeting">{greeting}{name} 👋</div>
@@ -247,36 +264,19 @@ export default function DayPlanner() {
           background: 'var(--bg-card)', border: '1.5px solid var(--border-subtle)',
           fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)',
         }}>
-          <span style={{ color: 'var(--accent-text)', fontFamily: 'var(--font-heading)', fontSize: 16 }}>
-            {caloriesConsumed}
-          </span>
+          <span style={{ color: 'var(--accent-text)', fontFamily: 'var(--font-heading)', fontSize: 16 }}>{caloriesConsumed}</span>
           <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>/ {nutrition.calories} kcal</span>
         </div>
       </div>
 
       <div className="page-body">
 
-        {/* ── Row 1: Stats ── */}
         <div className="stat-grid">
-          <StatCard
-            label="Calorie goal"
-            value={`${nutrition.calories} kcal`}
-            sub={`${nutrition.calories - caloriesConsumed} remaining today`}
-            accent
-          />
-          <StatCard
-            label="Water intake"
-            value={`${water * 250} ml`}
-            sub={`Goal: ${WATER_GOAL * 250} ml (${WATER_GOAL} cups)`}
-          />
-          <StatCard
-            label="Workout plan"
-            value={workoutLoading ? 'Loading...' : `${workouts.length} exercises`}
-            sub={`${profile.activity_level || 'Moderate'} intensity`}
-          />
+          <StatCard label="Calorie goal" value={`${nutrition.calories} kcal`} sub={`${nutrition.calories - caloriesConsumed} remaining today`} accent />
+          <StatCard label="Water intake" value={`${water * 250} ml`} sub={`Goal: ${WATER_GOAL * 250} ml (${WATER_GOAL} cups)`} />
+          <StatCard label="Workout plan" value={workoutLoading ? 'Loading...' : `${workouts.length} exercises`} sub={`${profile.activity_level || 'Moderate'} intensity`} />
         </div>
 
-        {/* ── Row 2: Calorie Bar + Water ── */}
         <div className="dash-grid-main">
           <div className="card">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
@@ -284,17 +284,10 @@ export default function DayPlanner() {
                 <div className="card-label">Energy today</div>
                 <div className="card-value">{caloriesConsumed} <span style={{ fontSize: 16, fontWeight: 400, color: 'var(--text-muted)' }}>kcal consumed</span></div>
               </div>
-              <div style={{
-                padding: '4px 12px', borderRadius: 20,
-                background: 'var(--accent-light)', color: 'var(--accent-text)',
-                fontSize: 12, fontWeight: 700,
-              }}>{calPct}%</div>
+              <div style={{ padding: '4px 12px', borderRadius: 20, background: 'var(--accent-light)', color: 'var(--accent-text)', fontSize: 12, fontWeight: 700 }}>{calPct}%</div>
             </div>
             <div className="prog-track">
-              <div className="prog-fill" style={{
-                width: `${calPct}%`,
-                background: calPct >= 100 ? 'var(--success)' : calPct >= 70 ? 'var(--warning)' : 'var(--accent)',
-              }} />
+              <div className="prog-fill" style={{ width: `${calPct}%`, background: calPct >= 100 ? 'var(--success)' : calPct >= 70 ? 'var(--warning)' : 'var(--accent)' }} />
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>
               <span>0 kcal</span>
@@ -310,36 +303,21 @@ export default function DayPlanner() {
               <span style={{ fontSize: 14, color: 'var(--text-muted)' }}>ml</span>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
-              {WATER_GOAL - water > 0
-                ? `${(WATER_GOAL - water) * 250}ml to reach your daily goal`
-                : '🎉 Daily goal reached!'}
+              {WATER_GOAL - water > 0 ? `${(WATER_GOAL - water) * 250}ml to reach your daily goal` : '🎉 Daily goal reached!'}
             </div>
             <div className="water-track">
               {Array.from({ length: WATER_GOAL }).map((_, i) => (
-                <div
-                  key={i}
-                  className={`water-cup${i < water ? ' filled' : ''}`}
-                  onClick={() => setWater(i < water ? i : i + 1)}
-                  title={`${(i + 1) * 250}ml`}
-                >
-                  💧
-                </div>
+                <div key={i} className={`water-cup${i < water ? ' filled' : ''}`} onClick={() => setWater(i < water ? i : i + 1)} title={`${(i + 1) * 250}ml`}>💧</div>
               ))}
             </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
-              <button onClick={() => setWater(w => Math.min(WATER_GOAL, w + 1))} className="btn-primary" style={{ height: 36, fontSize: 13 }}>
-                + 250 ml
-              </button>
-              {water > 0 && (
-                <button onClick={() => setWater(w => Math.max(0, w - 1))} className="btn-ghost" style={{ height: 36, fontSize: 13 }}>
-                  Undo
-                </button>
-              )}
+              <button onClick={() => setWater(w => Math.min(WATER_GOAL, w + 1))} className="btn-primary" style={{ height: 36, fontSize: 13 }}>+ 250 ml</button>
+              {water > 0 && <button onClick={() => setWater(w => Math.max(0, w - 1))} className="btn-ghost" style={{ height: 36, fontSize: 13 }}>Undo</button>}
             </div>
           </div>
         </div>
 
-        {/* ── Row 3: Meal Plan ── */}
+        {/* ── Meal Plan ── */}
         <div>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <div>
@@ -349,33 +327,23 @@ export default function DayPlanner() {
                 {profile.allergies ? ` · Avoiding: ${profile.allergies}` : ''}
               </div>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {Object.values(logged).filter(Boolean).length}/3 meals logged
-            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{Object.values(logged).filter(Boolean).length}/3 meals logged</div>
           </div>
 
           {dietLoading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              ⏳ Generating your personalised meal plan...
-            </div>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>⏳ Generating your personalised meal plan...</div>
           ) : dietError ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--error)' }}>{dietError}</div>
           ) : meals ? (
             <div className="meals-row">
               {['breakfast', 'lunch', 'dinner'].map(type => meals[type] && (
-                <MealCard
-                  key={type}
-                  meal={meals[type]}
-                  type={type}
-                  consumed={logged[type]}
-                  onToggle={() => setLogged(l => ({ ...l, [type]: !l[type] }))}
-                />
+                <MealCard key={type} meal={meals[type]} type={type} consumed={logged[type]} onToggle={() => setLogged(l => ({ ...l, [type]: !l[type] }))} />
               ))}
             </div>
           ) : null}
         </div>
 
-        {/* ── Row 3.5: Exercise Regime ── */}
+        {/* ── Exercise Regime ── */}
         <div style={{ marginTop: 24 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
             <div>
@@ -386,9 +354,7 @@ export default function DayPlanner() {
           </div>
 
           {workoutLoading ? (
-            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-              ⏳ Generating your workout plan...
-            </div>
+            <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>⏳ Generating your workout plan...</div>
           ) : workoutError ? (
             <div style={{ textAlign: 'center', padding: 40, color: 'var(--error)' }}>{workoutError}</div>
           ) : (
@@ -403,7 +369,7 @@ export default function DayPlanner() {
           )}
         </div>
 
-        {/* ── Row 4: Macros + Schedule ── */}
+        {/* ── Macros + Schedule ── */}
         <div className="dash-grid-bottom">
           <div className="card">
             <div className="card-label">Macro breakdown</div>
@@ -412,11 +378,7 @@ export default function DayPlanner() {
               <MacroBar label="Carbohydrates" current={carbsConsumed}   goal={nutrition.carbs}   color="#10B981" />
               <MacroBar label="Fats"          current={fatConsumed}     goal={nutrition.fat}     color="#F59E0B" />
             </div>
-            <div style={{
-              marginTop: 18, padding: '12px 14px', borderRadius: 'var(--radius-md)',
-              background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)',
-              fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6,
-            }}>
+            <div style={{ marginTop: 18, padding: '12px 14px', borderRadius: 'var(--radius-md)', background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)', fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               💡 <strong>Tip:</strong>{' '}
               {proteinConsumed < nutrition.protein * 0.5
                 ? "You're low on protein today. Add eggs, legumes, or a shake to your dinner."
@@ -443,21 +405,15 @@ export default function DayPlanner() {
         </div>
 
         {/* ── Insight banner ── */}
-        <div style={{
-          padding: '18px 24px', borderRadius: 'var(--radius-lg)',
-          background: 'var(--accent-light)', border: '1.5px solid var(--accent-border)',
-          display: 'flex', gap: 14, alignItems: 'flex-start',
-        }}>
+        <div style={{ padding: '18px 24px', borderRadius: 'var(--radius-lg)', background: 'var(--accent-light)', border: '1.5px solid var(--accent-border)', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
           <span style={{ fontSize: 22, flexShrink: 0 }}>📊</span>
           <div>
-            <div style={{ fontWeight: 700, color: 'var(--accent-text)', marginBottom: 4, fontSize: 14 }}>
-              Your personalised plan is live
-            </div>
+            <div style={{ fontWeight: 700, color: 'var(--accent-text)', marginBottom: 4, fontSize: 14 }}>Your personalised plan is live</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               Based on your profile — {profile.weight_kg}kg current, {profile.aim_kg || profile.weight_kg}kg target — your daily calorie goal is{' '}
               <strong>{nutrition.calories} kcal</strong> with <strong>{nutrition.protein}g protein</strong>,{' '}
               <strong>{nutrition.carbs}g carbs</strong>, and <strong>{nutrition.fat}g fat</strong>.
-              {' '}Calories are calculated using the Mifflin-St Jeor formula adjusted for your activity level.
+              Calories are calculated using the Mifflin-St Jeor formula adjusted for your activity level.
             </div>
           </div>
         </div>
