@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { MOCK_CONSULTANTS } from '../mockData';
+import React, { useState, useEffect, useMemo } from 'react';
+import { getConsultants } from '../api/apiClient';
 
 /* ─────────────────────────────────────────────
    ICONS
@@ -91,13 +91,8 @@ function BookingModal({ consultant, onClose }) {
   })();
 
   const canBook = selectedDay && selectedTime;
-
-  const handleBook = () => {
-    if (!canBook) return;
-    setSuccess(true);
-  };
-
-  const col = AVATAR_COLORS[consultant.idx % AVATAR_COLORS.length];
+  const handleBook = () => { if (!canBook) return; setSuccess(true); };
+  const col = AVATAR_COLORS[(consultant.idx ?? 0) % AVATAR_COLORS.length];
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -117,13 +112,10 @@ function BookingModal({ consultant, onClose }) {
                 Confirmation sent to {consultant.email}.
               </div>
             </div>
-            <button className="btn-primary" style={{ marginTop: 8 }} onClick={onClose}>
-              Done
-            </button>
+            <button className="btn-primary" style={{ marginTop: 8 }} onClick={onClose}>Done</button>
           </div>
         ) : (
           <>
-            {/* Consultant summary */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
               <div className="cons-avatar" style={{ width: 52, height: 52, fontSize: 18, background: col.bg, color: col.text }}>
                 {initials(consultant.name)}
@@ -139,7 +131,6 @@ function BookingModal({ consultant, onClose }) {
               </div>
             </div>
 
-            {/* Day picker */}
             <div className="modal-section-label" style={{ marginTop: 0 }}>Select a day</div>
             <div className="day-pills">
               {DAYS.map(d => {
@@ -157,7 +148,6 @@ function BookingModal({ consultant, onClose }) {
               })}
             </div>
 
-            {/* Time picker */}
             <div className="modal-section-label">Select a time slot</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
               {timeSlots.map(t => (
@@ -170,8 +160,7 @@ function BookingModal({ consultant, onClose }) {
                     borderColor: selectedTime === t ? 'var(--accent)' : 'var(--border-default)',
                     background: selectedTime === t ? 'var(--accent)' : 'transparent',
                     color: selectedTime === t ? '#fff' : 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    transition: 'all 150ms',
+                    cursor: 'pointer', transition: 'all 150ms',
                     fontFamily: 'var(--font-body)',
                   }}
                 >
@@ -180,7 +169,6 @@ function BookingModal({ consultant, onClose }) {
               ))}
             </div>
 
-            {/* Optional note */}
             <div className="modal-section-label">Note for the consultant (optional)</div>
             <textarea
               value={note}
@@ -192,8 +180,7 @@ function BookingModal({ consultant, onClose }) {
                 border: '1.5px solid var(--border-default)',
                 background: 'var(--bg-input)', color: 'var(--text-primary)',
                 padding: '10px 14px', fontSize: 13, fontFamily: 'var(--font-body)',
-                outline: 'none', resize: 'vertical',
-                transition: 'border-color 200ms',
+                outline: 'none', resize: 'vertical', transition: 'border-color 200ms',
               }}
               onFocus={e => e.target.style.borderColor = 'var(--border-focus)'}
               onBlur={e => e.target.style.borderColor = 'var(--border-default)'}
@@ -217,8 +204,8 @@ function BookingModal({ consultant, onClose }) {
 /* ─────────────────────────────────────────────
    CONSULTANT CARD
 ───────────────────────────────────────────── */
-function ConsultantCard({ consultant, onBook }) {
-  const col = AVATAR_COLORS[consultant.idx % AVATAR_COLORS.length];
+function ConsultantCard({ consultant, index, onBook }) {
+  const col = AVATAR_COLORS[index % AVATAR_COLORS.length];
   return (
     <div className="cons-card">
       <div className="cons-card-top">
@@ -232,22 +219,10 @@ function ConsultantCard({ consultant, onBook }) {
       </div>
 
       <div className="cons-info-list">
-        <div className="cons-info-row">
-          <LocationIcon />
-          <span><span className="cons-info-val">{consultant.location}</span></span>
-        </div>
-        <div className="cons-info-row">
-          <ClockIcon />
-          <span>{consultant.available_time}</span>
-        </div>
-        <div className="cons-info-row">
-          <CalendarIcon />
-          <span>{consultant.available_days}</span>
-        </div>
-        <div className="cons-info-row">
-          <PhoneIcon />
-          <span>{consultant.contact_no}</span>
-        </div>
+        <div className="cons-info-row"><LocationIcon /><span>{consultant.location}</span></div>
+        <div className="cons-info-row"><ClockIcon /><span>{consultant.available_time}</span></div>
+        <div className="cons-info-row"><CalendarIcon /><span>{consultant.available_days}</span></div>
+        <div className="cons-info-row"><PhoneIcon /><span>{consultant.contact_no}</span></div>
       </div>
 
       <div>
@@ -256,17 +231,14 @@ function ConsultantCard({ consultant, onBook }) {
       </div>
 
       <div className="cons-card-footer">
-        <button
-          className="btn-sm-ghost"
-          onClick={() => window.open(`mailto:${consultant.email}`)}
-        >
+        <button className="btn-sm-ghost" onClick={() => window.open(`mailto:${consultant.email}`)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
             <polyline points="22,6 12,13 2,6"/>
           </svg>
           Email
         </button>
-        <button className="btn-sm-primary" onClick={() => onBook(consultant)}>
+        <button className="btn-sm-primary" onClick={() => onBook({ ...consultant, idx: index })}>
           <CalendarIcon />
           Book session
         </button>
@@ -279,14 +251,32 @@ function ConsultantCard({ consultant, onBook }) {
    MAIN PAGE
 ───────────────────────────────────────────── */
 export default function Consultants() {
+  const [consultants, setConsultants] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [filter, setFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [booking, setBooking] = useState(null);
 
   const tabs = ['All', 'Dietician', 'Physician'];
 
+  // ── Fetch from real backend ──
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const res = await getConsultants();
+        setConsultants(res.data);
+      } catch (err) {
+        setError(err.response?.data?.error || 'Failed to load consultants.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
   const filtered = useMemo(() => {
-    return MOCK_CONSULTANTS.filter(c => {
+    return consultants.filter(c => {
       const matchSpec = filter === 'All' || c.specialization === filter;
       const q = search.toLowerCase();
       const matchSearch = !q ||
@@ -295,7 +285,21 @@ export default function Consultants() {
         c.specialization.toLowerCase().includes(q);
       return matchSpec && matchSearch;
     });
-  }, [filter, search]);
+  }, [consultants, filter, search]);
+
+  // ── Loading state ──
+  if (loading) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300, color: 'var(--text-muted)', fontSize: 15 }}>
+      Loading consultants...
+    </div>
+  );
+
+  // ── Error state ──
+  if (error) return (
+    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300, color: 'var(--error)', fontSize: 15 }}>
+      {error}
+    </div>
+  );
 
   return (
     <>
@@ -310,21 +314,14 @@ export default function Consultants() {
       </div>
 
       <div className="page-body">
-
-        {/* ── Filters + Search ── */}
         <div className="cons-header">
           <div className="filter-tabs">
             {tabs.map(t => (
-              <button
-                key={t}
-                className={`filter-tab${filter === t ? ' active' : ''}`}
-                onClick={() => setFilter(t)}
-              >
+              <button key={t} className={`filter-tab${filter === t ? ' active' : ''}`} onClick={() => setFilter(t)}>
                 {t}
               </button>
             ))}
           </div>
-
           <div className="cons-search-wrap">
             <span className="cons-search-icon"><SearchIcon /></span>
             <input
@@ -337,11 +334,10 @@ export default function Consultants() {
           </div>
         </div>
 
-        {/* ── Grid ── */}
         {filtered.length > 0 ? (
           <div className="cons-grid">
-            {filtered.map((c) => (
-              <ConsultantCard key={c.cons_id} consultant={c} onBook={setBooking} />
+            {filtered.map((c, index) => (
+              <ConsultantCard key={c.cons_id} consultant={c} index={index} onBook={setBooking} />
             ))}
           </div>
         ) : (
@@ -351,15 +347,10 @@ export default function Consultants() {
             <div style={{ fontSize: 13 }}>Try a different filter or search term</div>
           </div>
         )}
-
       </div>
 
-      {/* ── Booking Modal ── */}
       {booking && (
-        <BookingModal
-          consultant={booking}
-          onClose={() => setBooking(null)}
-        />
+        <BookingModal consultant={booking} onClose={() => setBooking(null)} />
       )}
     </>
   );

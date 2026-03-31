@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import ThemeToggle from '../components/ThemeToggle';
+import { updateProfile } from '../api/apiClient';
 
 /* ── Reusable Pill Selector ── */
 function PillGroup({ options, value, onChange }) {
@@ -56,10 +57,10 @@ function BMIBadge({ height, weight }) {
   if (!h || !w || h <= 0) return null;
   const bmi = (w / (h * h)).toFixed(1);
   let status = '', cls = '';
-  if (bmi < 18.5)  { status = 'Underweight'; cls = 'under'; }
+  if (bmi < 18.5)    { status = 'Underweight';   cls = 'under';   }
   else if (bmi < 25) { status = 'Healthy weight'; cls = 'healthy'; }
-  else if (bmi < 30) { status = 'Overweight'; cls = 'over'; }
-  else               { status = 'Obese'; cls = 'obese'; }
+  else if (bmi < 30) { status = 'Overweight';     cls = 'over';    }
+  else               { status = 'Obese';           cls = 'obese';   }
 
   return (
     <div className="bmi-badge">
@@ -94,12 +95,12 @@ const ACTIVITY_OPTIONS = [
 
 const MEAL_OPTIONS = [
   { label: 'Vegetarian', value: 'Veg',     icon: '🥦' },
-  { label: 'Non-Veg',   value: 'Non-Veg', icon: '🍗' },
+  { label: 'Non-Veg',    value: 'Non-Veg', icon: '🍗' },
 ];
 
 const STEPS = ['Basic Info', 'Body Metrics', 'Preferences'];
 
-/* ── Field helper — defined OUTSIDE to prevent remounting on each render ── */
+/* ── Field helper ── */
 function Field({ id, label, hint, errors = {}, children }) {
   return (
     <div className="form-field">
@@ -116,6 +117,8 @@ export default function SetupProfile() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState('');
 
   const getMinDeadline = () => {
     const d = new Date();
@@ -124,21 +127,24 @@ export default function SetupProfile() {
   };
 
   const [form, setForm] = useState({
-    // Step 1 — Basic Info
-    name:       '',
-    phone:      '',
-    age:        '',
-    // Step 2 — Body Metrics
-    height_cm:  '',
-    weight_kg:  '',
-    aim_kg:     '',
-    deadline:   '',
-    // Step 3 — Preferences
-    gender:          '',
-    activity_level:  '',
-    meal_pref:       '',
-    allergies:       '',
+    name:           '',
+    phone:          '',
+    age:            '',
+    height_cm:      '',
+    weight_kg:      '',
+    aim_kg:         '',
+    deadline:       '',
+    gender:         '',
+    activity_level: '',
+    meal_pref:      '',
+    allergies:      '',
   });
+
+  // Pre-fill name from register page
+  useEffect(() => {
+    const savedName = localStorage.getItem('register-name');
+    if (savedName) setForm(prev => ({ ...prev, name: savedName }));
+  }, []);
 
   const set = (field) => (e) => {
     setForm(prev => ({ ...prev, [field]: e.target.value }));
@@ -159,7 +165,7 @@ export default function SetupProfile() {
     }
     if (s === 1) {
       if (!form.height_cm || form.height_cm < 50 || form.height_cm > 250) e.height_cm = 'Enter height in cm';
-      if (!form.weight_kg || form.weight_kg < 20 || form.weight_kg > 300)  e.weight_kg = 'Enter weight in kg';
+      if (!form.weight_kg || form.weight_kg < 20 || form.weight_kg > 300) e.weight_kg = 'Enter weight in kg';
       if (!form.aim_kg || form.aim_kg < 20 || form.aim_kg > 300) e.aim_kg = 'Enter a valid goal weight';
       if (!form.deadline) {
         e.deadline = 'Target date is required';
@@ -187,15 +193,68 @@ export default function SetupProfile() {
     setStep(s => s - 1);
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const errs = validate(2);
     if (Object.keys(errs).length) { setErrors(errs); return; }
-    localStorage.setItem('vita-profile', JSON.stringify(form));
-    navigate('/planner');
+
+    setSubmitting(true);
+    setSubmitError('');
+
+    try {
+      // ✅ allergies sent as array (text[] in Supabase)
+      const allergiesArray = form.allergies
+        ? form.allergies.split(',').map(a => a.trim()).filter(Boolean)
+        : [];
+
+      // 1. Save profile to backend DB
+      await updateProfile({
+        name:             form.name,
+        phone:            form.phone,
+        age:              parseInt(form.age),
+        gender:           form.gender,
+        height_cm:        parseFloat(form.height_cm),
+        weight_kg:        parseFloat(form.weight_kg),
+        activity_level:   form.activity_level,
+        allergies:        allergiesArray,
+        meal_preferences: form.meal_pref,
+        deadline:         form.deadline,
+        aim_kg:           parseFloat(form.aim_kg),
+      });
+
+      // 2. Save to localStorage for DayPlanner UI
+      localStorage.setItem('vita-profile', JSON.stringify({
+        name:           form.name,
+        age:            form.age,
+        gender:         form.gender,
+        height_cm:      form.height_cm,
+        weight_kg:      form.weight_kg,
+        aim_kg:         form.aim_kg,
+        activity_level: form.activity_level,
+        meal_pref:      form.meal_pref,
+        allergies:      form.allergies,
+        deadline:       form.deadline,
+      }));
+
+      // 3. Clean up temp data
+      localStorage.removeItem('register-name');
+      localStorage.removeItem('register-email');
+
+      // 4. Go to planner
+      navigate('/planner');
+
+    } catch (err) {
+      // ✅ Always extract a string, never pass an object to React
+      const msg =
+        err.response?.data?.error?.message ||
+        err.response?.data?.message ||
+        (typeof err.response?.data?.error === 'string' ? err.response.data.error : null) ||
+        'Failed to save profile. Please try again.';
+      setSubmitError(msg);
+    } finally {
+      setSubmitting(false);
+    }
   };
-
-
 
   return (
     <div className="setup-page">
@@ -229,16 +288,14 @@ export default function SetupProfile() {
                 <Field id="name" label="Full name" errors={errors}>
                   <input id="name" className={`form-input${errors.name ? ' error' : ''}`}
                     type="text" placeholder="Jane Doe" autoComplete="name"
-                    maxLength={60}
-                    value={form.name} onChange={set('name')} />
+                    maxLength={60} value={form.name} onChange={set('name')} />
                 </Field>
 
                 <div className="form-grid-2">
                   <Field id="phone" label="Phone number" hint="For appointment reminders" errors={errors}>
                     <input id="phone" className={`form-input${errors.phone ? ' error' : ''}`}
                       type="tel" placeholder="9876543210" autoComplete="tel"
-                      maxLength={10}
-                      value={form.phone} onChange={set('phone')} />
+                      maxLength={10} value={form.phone} onChange={set('phone')} />
                   </Field>
                   <Field id="age" label="Age" errors={errors}>
                     <input id="age" className={`form-input${errors.age ? ' error' : ''}`}
@@ -303,7 +360,7 @@ export default function SetupProfile() {
                 </Field>
 
                 <Field id="activity_level" label="Activity level"
-                  hint="Light = desk job / minimal exercise · Moderate = 3–4 workouts/week · Heavy = athlete / daily intense training"
+                  hint="Light = desk job · Moderate = 3–4 workouts/week · Heavy = daily intense training"
                   errors={errors}>
                   <PillGroup options={ACTIVITY_OPTIONS} value={form.activity_level} onChange={setPill('activity_level')} />
                 </Field>
@@ -312,16 +369,27 @@ export default function SetupProfile() {
                   <PillGroup options={MEAL_OPTIONS} value={form.meal_pref} onChange={setPill('meal_pref')} />
                 </Field>
 
-                <Field id="allergies" label="Allergies or food restrictions" hint="Optional — e.g. nuts, gluten, dairy, shellfish" errors={errors}>
+                <Field id="allergies" label="Allergies or food restrictions" hint="Optional — separate with commas e.g. nuts, gluten, dairy" errors={errors}>
                   <input id="allergies" className="form-input" type="text"
                     placeholder="e.g. Lactose intolerant, tree nuts"
-                    maxLength={120}
-                    value={form.allergies} onChange={set('allergies')} />
+                    maxLength={120} value={form.allergies} onChange={set('allergies')} />
                 </Field>
 
               </div>
             </>
           )}
+
+          {/* ── Submit error ── */}
+          {submitError ? (
+            <div style={{
+              color: 'var(--error)', background: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.2)',
+              borderRadius: 8, padding: '10px 14px',
+              fontSize: 13, textAlign: 'center', marginTop: 12,
+            }}>
+              {typeof submitError === 'string' ? submitError : 'Failed to save profile. Please try again.'}
+            </div>
+          ) : null}
 
           {/* ── Navigation ── */}
           <div className="step-nav">
@@ -338,14 +406,13 @@ export default function SetupProfile() {
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
               </button>
             ) : (
-              <button type="submit" className="btn-primary" style={{ flex: 2 }}>
-                Generate my plan
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <button type="submit" className="btn-primary" style={{ flex: 2 }} disabled={submitting}>
+                {submitting ? 'Saving your plan...' : 'Generate my plan'}
+                {!submitting && <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
               </button>
             )}
           </div>
 
-          {/* Step count */}
           <p style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-muted)', marginTop: 16 }}>
             Step {step + 1} of {STEPS.length}
           </p>

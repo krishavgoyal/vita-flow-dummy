@@ -6,6 +6,9 @@ const {getAllUsers} = require("../models/userModel");
 const updateProfile = async (req, res) => {
     try{
         const email = req.user.email; // from JWT
+        console.log("=== UPDATE PROFILE CALLED ===");
+        console.log("Email from token:", email);
+        console.log("Body received:", req.body);
 
         const {
             name,
@@ -35,10 +38,14 @@ const updateProfile = async (req, res) => {
             aim_kg
         });
 
+        console.log("Update data:", data);
+        console.log("Update error:", error);
+
         if(error) return res.status(400).json({error});
 
         res.json({message: "Profile Updated", data});
     } catch(err){
+        console.log("Update exception:", err.message);
         res.status(500).json({error: err.message});
     }
 };
