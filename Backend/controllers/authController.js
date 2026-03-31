@@ -31,7 +31,10 @@ const login = async(req, res) => {
             {expiresIn: "1h"}
         );
 
-        res.json({token});
+       res.json({ 
+  token, 
+  user: { email: data.email, id: data.id } // Send user info too!
+});
     } catch(err){
         res.status(500).json({error: err.message});
     }

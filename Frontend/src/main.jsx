@@ -12,3 +12,5 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     </ThemeProvider>
   </React.StrictMode>
 );
+
+console.log("Backend URL is:", import.meta.env.VITE_API_URL);
